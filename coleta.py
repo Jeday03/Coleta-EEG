@@ -51,6 +51,8 @@ parser.add_argument("--serial", default="COM3")
 parser.add_argument("--output-dir", default="coletas")
 parser.add_argument("--test", action="store_true")
 parser.add_argument("--hide-status", action="store_true")
+parser.add_argument("--no-pauses", action="store_true")
+parser.add_argument("--save-invalid", action="store_true")
 args = parser.parse_args()
 
 
@@ -460,11 +462,17 @@ def proximo_trial():
 
 def finalizar_run():
     global em_pausa
+    global run_index
 
     flush_data()
 
     if run_index + 1 >= NUM_RUNS:
         finalizar_experimento()
+        return
+
+    if args.no_pauses:
+        run_index += 1
+        iniciar_run()
         return
 
     em_pausa = True
@@ -1008,6 +1016,7 @@ def finalizar_experimento():
     global finalizado
     global board_started
     global board_prepared
+    global output_edf
 
     if finalizado:
         return
@@ -1030,23 +1039,38 @@ def finalizar_experimento():
     )
 
     if not validacao["all_ok"]:
-        print(
-            "\nEDF não gerado porque "
-            "a aquisição falhou na validação."
+        if not args.save_invalid:
+            print(
+                "\nEDF não gerado porque "
+                "a aquisição falhou na validação."
+            )
+
+            fim_label.config(
+                text=(
+                    "FIM\n\n"
+                    "Coleta inválida. EDF não gerado."
+                )
+            )
+            fim_label.place(
+                relx=0.5,
+                rely=0.5,
+                anchor="center",
+            )
+            return
+
+        stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        output_edf = output_edf.with_name(
+            f"{output_edf.stem}_INVALID_{stamp}{output_edf.suffix}"
         )
 
-        fim_label.config(
-            text=(
-                "FIM\n\n"
-                "Coleta inválida. EDF não gerado."
-            )
+        print(
+            "\nATENÇÃO: a aquisição falhou na validação, "
+            "mas --save-invalid está ativo."
         )
-        fim_label.place(
-            relx=0.5,
-            rely=0.5,
-            anchor="center",
+        print(
+            "O EDF será salvo com os dados que foram recebidos."
         )
-        return
+        print("EDF de diagnóstico:", output_edf)
 
     try:
         edf_ok = exportar_edf()
@@ -1079,15 +1103,26 @@ def finalizar_experimento():
         )
         return
 
-    print("\nColeta concluída.")
-    print("EDF:", output_edf)
+    if validacao["all_ok"]:
+        print("\nColeta concluída.")
+        print("EDF:", output_edf)
 
-    fim_label.config(
-        text=(
-            "FIM\n\n"
-            "Coleta salva com sucesso."
+        fim_label.config(
+            text=(
+                "FIM\n\n"
+                "Coleta salva com sucesso."
+            )
         )
-    )
+    else:
+        print("\nColeta concluída com falhas de aquisição.")
+        print("EDF de diagnóstico salvo:", output_edf)
+
+        fim_label.config(
+            text=(
+                "FIM\n\n"
+                "EDF salvo com falhas de aquisição."
+            )
+        )
     fim_label.place(
         relx=0.5,
         rely=0.5,

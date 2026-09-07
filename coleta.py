@@ -52,7 +52,6 @@ parser.add_argument("--output-dir", default="coletas")
 parser.add_argument("--test", action="store_true")
 parser.add_argument("--hide-status", action="store_true")
 parser.add_argument("--no-pauses", action="store_true")
-parser.add_argument("--save-invalid", action="store_true")
 args = parser.parse_args()
 
 
@@ -118,6 +117,45 @@ participant = {
 
 def sanitizar_codigo(codigo):
     return re.sub(r"[^A-Za-z0-9_-]+", "_", codigo.strip())
+
+
+def formatar_data_nascimento(event=None):
+
+    valor = nascimento_entry.get()
+    digitos = re.sub(r"\D", "", valor)[:8]
+
+    if len(digitos) <= 2:
+        formatado = digitos
+    elif len(digitos) <= 4:
+        formatado = f"{digitos[:2]}/{digitos[2:]}"
+    else:
+        formatado = (
+            f"{digitos[:2]}/"
+            f"{digitos[2:4]}/"
+            f"{digitos[4:]}"
+        )
+
+    if valor != formatado:
+        nascimento_entry.delete(0, tk.END)
+        nascimento_entry.insert(0, formatado)
+
+
+def escolher_caminho_edf(output_dir, codigo):
+
+    candidato = output_dir / f"{codigo}.edf"
+
+    if not candidato.exists():
+        return candidato
+
+    contador = 1
+
+    while True:
+        candidato = output_dir / f"{codigo}_{contador}.edf"
+
+        if not candidato.exists():
+            return candidato
+
+        contador += 1
 
 
 def criar_ordens():
@@ -249,20 +287,10 @@ def validar_dados_participante():
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    if args.test:
-        stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        output_edf = output_dir / f"{codigo}_test_{stamp}.edf"
-    else:
-        output_edf = output_dir / f"{codigo}.edf"
-
-        if output_edf.exists():
-            erro_label.config(
-                text=(
-                    f"O arquivo {output_edf.name} já existe. "
-                    "Use outro código ou mova o arquivo anterior."
-                )
-            )
-            return
+    output_edf = escolher_caminho_edf(
+        output_dir,
+        codigo,
+    )
 
     participant["patient_code"] = codigo
     participant["birthdate"] = birthdate
@@ -1016,7 +1044,6 @@ def finalizar_experimento():
     global finalizado
     global board_started
     global board_prepared
-    global output_edf
 
     if finalizado:
         return
@@ -1039,38 +1066,14 @@ def finalizar_experimento():
     )
 
     if not validacao["all_ok"]:
-        if not args.save_invalid:
-            print(
-                "\nEDF não gerado porque "
-                "a aquisição falhou na validação."
-            )
-
-            fim_label.config(
-                text=(
-                    "FIM\n\n"
-                    "Coleta inválida. EDF não gerado."
-                )
-            )
-            fim_label.place(
-                relx=0.5,
-                rely=0.5,
-                anchor="center",
-            )
-            return
-
-        stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        output_edf = output_edf.with_name(
-            f"{output_edf.stem}_INVALID_{stamp}{output_edf.suffix}"
-        )
-
         print(
-            "\nATENÇÃO: a aquisição falhou na validação, "
-            "mas --save-invalid está ativo."
+            "\nATENÇÃO: a aquisição apresentou falhas "
+            "nos critérios de validação."
         )
         print(
-            "O EDF será salvo com os dados que foram recebidos."
+            "O EDF será salvo normalmente com todos os dados "
+            "que foram recebidos."
         )
-        print("EDF de diagnóstico:", output_edf)
 
     try:
         edf_ok = exportar_edf()
@@ -1086,14 +1089,14 @@ def finalizar_experimento():
             pass
 
         print(
-            "\nEDF inválido. "
+            "\nFalha estrutural na geração do EDF. "
             "O arquivo foi removido."
         )
 
         fim_label.config(
             text=(
                 "FIM\n\n"
-                "Falha na validação do EDF."
+                "Não foi possível salvar o EDF."
             )
         )
         fim_label.place(
@@ -1103,26 +1106,22 @@ def finalizar_experimento():
         )
         return
 
-    if validacao["all_ok"]:
-        print("\nColeta concluída.")
-        print("EDF:", output_edf)
+    print("\nColeta concluída.")
+    print("EDF:", output_edf)
 
-        fim_label.config(
-            text=(
-                "FIM\n\n"
-                "Coleta salva com sucesso."
-            )
+    if not validacao["all_ok"]:
+        print(
+            "Observação: houve avisos/falhas na validação "
+            "da aquisição; consulte o terminal."
         )
-    else:
-        print("\nColeta concluída com falhas de aquisição.")
-        print("EDF de diagnóstico salvo:", output_edf)
 
-        fim_label.config(
-            text=(
-                "FIM\n\n"
-                "EDF salvo com falhas de aquisição."
-            )
+    fim_label.config(
+        text=(
+            "FIM\n\n"
+            "Coleta salva com sucesso."
         )
+    )
+
     fim_label.place(
         relx=0.5,
         rely=0.5,
@@ -1237,6 +1236,11 @@ nascimento_entry.grid(
     column=1,
     padx=10,
     pady=8,
+)
+
+nascimento_entry.bind(
+    "<KeyRelease>",
+    formatar_data_nascimento,
 )
 
 tk.Label(

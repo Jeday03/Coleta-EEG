@@ -10,9 +10,10 @@ import pyedflib
 
 
 CANAIS_SENSORIOMOTORES = [
-    "C3", "C4", "Cz",
-    "F3", "F4",
-    "P3", "P4",
+    "Fp1", "Fz", "C3", "C4",
+    "T5", "T6", "Cz", "Pz",
+    "F7", "F8", "F3", "F4",
+    "T3", "T4", "P3", "P4",
 ]
 
 FREQ_MIN = 8.0

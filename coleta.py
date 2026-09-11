@@ -324,11 +324,11 @@ def validar_dados_participante():
     run_orders = criar_ordens()
 
     print("Placa preparada")
+    print("")
     print("Participante:", participant["patient_code"])
+    print("Arquivo:", output_edf)
     print("Frequência:", fs, "Hz")
     print("Canais EEG:", len(eeg_ch))
-    print("Modo:", "TESTE" if args.test else "COLETA")
-    print("EDF:", output_edf)
 
     instrucoes_label.config(
         text=(
@@ -402,8 +402,7 @@ def iniciar_run():
 
     marcar("NewRun")
 
-    print(f"\nRun {run_index + 1}/{NUM_RUNS}")
-    print("Ordem:", run_orders[run_index])
+    print(f"\nRun {run_index + 1}/{NUM_RUNS} iniciada")
 
     iniciar_trial()
 
@@ -420,12 +419,6 @@ def iniciar_trial():
         anchor="center",
     )
     atualizar_status()
-
-    print(
-        f"Run {run_index + 1}/{NUM_RUNS} | "
-        f"Trial {trial_index + 1}/{TRIALS_POR_RUN} | "
-        f"{trial}"
-    )
 
     root.after(2000, beep)
     root.after(
@@ -492,6 +485,7 @@ def finalizar_run():
     global em_pausa
     global run_index
 
+    print(f"Run {run_index + 1}/{NUM_RUNS} concluída")
     flush_data()
 
     if run_index + 1 >= NUM_RUNS:
@@ -672,119 +666,55 @@ def calcular_validacao_aquisicao():
 
 
 def imprimir_validacao_aquisicao(validacao):
-    print("\nValidação dos eventos:")
+    esperado_total = sum(
+        validacao["expected_event_counts"].values()
+    )
+    gravado_total = sum(
+        recorded_events.get(evento, 0)
+        for evento in validacao["expected_event_counts"]
+    )
 
-    for evento, esperado in (
-        validacao["expected_event_counts"].items()
-    ):
-        gravado = recorded_events.get(evento, 0)
-        status = (
-            "OK"
-            if gravado == esperado
-            else "ERRO"
-        )
-        print(
-            f"{evento}: "
-            f"{gravado}/{esperado} [{status}]"
-        )
+    print("\nValidação da aquisição:")
 
-    print("\nTaxa de aquisição:")
+    eventos_status = "OK" if validacao["events_ok"] else "ERRO"
+    print(
+        f"Eventos: {gravado_total}/{esperado_total} "
+        f"[{eventos_status}]"
+    )
 
     taxa = validacao["effective_sampling_rate_hz"]
 
     if taxa is None:
-        print("Não foi possível calcular. [ERRO]")
+        print("Taxa de aquisição: não calculada [ERRO]")
     else:
-        status = (
-            "OK"
-            if validacao["sampling_rate_ok"]
-            else "ERRO"
-        )
-        print(
-            f"{taxa:.2f} Hz "
-            f"(esperado: {fs} Hz) [{status}]"
-        )
+        taxa_status = "OK" if validacao["sampling_rate_ok"] else "ERRO"
+        print(f"Taxa de aquisição: {taxa:.2f} Hz [{taxa_status}]")
 
-    print("\nContinuidade dos pacotes:")
-
-    perdas = len(
-        validacao["packet_discontinuities"]
-    )
-    status = (
-        "OK"
-        if validacao["packet_sequence_ok"]
-        else "ERRO"
-    )
-
+    perdas = len(validacao["packet_discontinuities"])
+    pacotes_status = "OK" if validacao["packet_sequence_ok"] else "AVISO"
     print(
-        f"Descontinuidades: {perdas} [{status}]"
+        f"Descontinuidades de pacotes: "
+        f"{perdas} [{pacotes_status}]"
     )
-
-    if perdas:
-        for item in (
-            validacao["packet_discontinuities"][:10]
-        ):
-            print(
-                "  amostra "
-                f"{item['sample_before']} -> "
-                f"{item['sample_after']}: "
-                f"pacote {item['package_before']} -> "
-                f"{item['package_after']} "
-                f"(delta {item['delta_mod_256']})"
-            )
-
-    print("\nGaps de timestamp:")
 
     gaps = validacao["large_timestamp_gaps"]
 
     if gaps:
         print(
-            f"Gaps maiores que {4 / fs:.3f}s: "
-            f"{len(gaps)} [AVISO]"
-        )
-        print(
-            "Maior gap:",
-            f"{max(gaps):.4f}s",
+            f"Gaps > {4 / fs:.3f}s: {len(gaps)} [AVISO] "
+            f"(maior: {max(gaps):.4f}s)"
         )
     else:
+        print(f"Gaps > {4 / fs:.3f}s: 0 [OK]")
+
+    intervalos_status = "OK" if validacao["intervals_ok"] else "ERRO"
+    print(f"Intervalos do protocolo: [{intervalos_status}]")
+
+    if not validacao["all_ok"]:
         print(
-            f"Gaps maiores que {4 / fs:.3f}s: "
-            "0 [OK]"
+            "Observação: a coleta será salva mesmo com "
+            "avisos de aquisição."
         )
-
-    print("\nIntervalos do protocolo:")
-
-    for chave, valores in (
-        validacao["intervals"].items()
-    ):
-        if not valores:
-            continue
-
-        segundos = [
-            item["seconds"]
-            for item in valores
-        ]
-
-        status = (
-            "OK"
-            if all(
-                item["ok"]
-                for item in valores
-            )
-            else "ERRO"
-        )
-
-        print(
-            f"{chave[0]}->{chave[1]}: "
-            f"mín {min(segundos):.3f}s | "
-            f"máx {max(segundos):.3f}s "
-            f"[{status}]"
-        )
-
-    if validacao["all_ok"]:
-        print("\nVALIDAÇÃO DA AQUISIÇÃO: OK")
-    else:
-        print("\nVALIDAÇÃO DA AQUISIÇÃO: ERRO")
 
 
 def exportar_edf():
@@ -832,7 +762,7 @@ def exportar_edf():
 
         if hasattr(writer_edf, "setEquipment"):
             writer_edf.setEquipment(
-                "OpenBCI Cyton + Daisy"
+                "OpenBCI_Cyton_Daisy"
             )
 
         if session_started is not None:
@@ -1003,36 +933,19 @@ def validar_edf(n_samples_originais):
             f"[{'OK' if canais_ok else 'ERRO'}]"
         )
         print(
-            "Nomes dos canais: "
-            f"[{'OK' if labels_ok else 'ERRO'}]"
-        )
-        print(
-            "Frequência dos canais: "
+            "Frequência: "
             f"[{'OK' if frequencias_ok else 'ERRO'}]"
         )
         print(
-            "Amostras por canal: "
-            f"{nsamples[0]} "
-            f"[{'OK' if amostras_ok else 'ERRO'}]"
-        )
-        print(
             "Anotações: "
-            f"{len(descriptions)}/"
-            f"{len(eventos_esperados)} "
+            f"{len(descriptions)}/{len(eventos_esperados)} "
             f"[{'OK' if anotacoes_ok else 'ERRO'}]"
         )
 
-        if padding:
-            print(
-                "Preenchimento do último registro EDF: "
-                f"{padding} amostras "
-                f"({padding / fs:.3f}s)"
-            )
-
         if tudo_ok:
-            print("\nVALIDAÇÃO DO EDF: OK")
+            print("Estrutura do EDF: [OK]")
         else:
-            print("\nVALIDAÇÃO DO EDF: ERRO")
+            print("Estrutura do EDF: [ERRO]")
 
         return tudo_ok
 
@@ -1107,13 +1020,7 @@ def finalizar_experimento():
         return
 
     print("\nColeta concluída.")
-    print("EDF:", output_edf)
-
-    if not validacao["all_ok"]:
-        print(
-            "Observação: houve avisos/falhas na validação "
-            "da aquisição; consulte o terminal."
-        )
+    print("EDF salvo:", output_edf)
 
     fim_label.config(
         text=(

@@ -1324,3 +1324,10 @@ setup_frame.place(
 codigo_entry.focus_set()
 
 root.mainloop()
+
+try:
+    BoardShim.release_all_sessions()
+except Exception:
+    pass
+
+del board
